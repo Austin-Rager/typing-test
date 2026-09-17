@@ -218,6 +218,7 @@ export default function Test() {
         autoCorrect={false}
         autoCapitalize="none"
         ref={inputRef}
+        style={styles.hiddenInput}
       />
     </SafeAreaView>
   );
@@ -246,5 +247,11 @@ const styles = StyleSheet.create({
   },
   untypedChar: {
     color: "gray",
+  },
+  hiddenInput: {
+    position: "absolute",
+    opacity: 0,
+    height: 1,
+    width: 1,
   },
 });
