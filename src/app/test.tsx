@@ -1,4 +1,5 @@
 import { useLocalSearchParams } from "expo-router";
+import { useState } from "react";
 import { Text, View } from "react-native";
 
 const RANDOM_WORDS = [
@@ -31,6 +32,8 @@ const CODE_SNIPPETS = {
     "function fibonacci(n) {\n  if (n <= 1) return n;\n  return fibonacci(n - 1) + fibonacci(n - 2);\n}",
   ],
 };
+
+const [targetText, setTargetText] = useState("");
 
 export default function Test() {
   type Settings =
@@ -96,6 +99,7 @@ export default function Test() {
       </Text>
       <Text>Quote length: {quoteLength}</Text>
       <Text>Text style: {textStyle}</Text>
+      <Text style={styles.targetText}>{generateTargetText(parsedParams)}</Text>
     </View>
   );
 }
