@@ -1,13 +1,13 @@
 import {
-  JetBrainsMono_400Regular,
-  useFonts,
+  useFonts
 } from "@expo-google-fonts/jetbrains-mono";
 import { Stack } from "expo-router";
 import { View } from "react-native";
+import { fonts } from "../theme/typography";
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
-    JetBrainsMono_400Regular,
+    fonts,
   });
 
   if (!fontsLoaded) {
