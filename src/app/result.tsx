@@ -2,38 +2,18 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-type Results = {
-  wpm: number;
-  accuracy: number;
-  errors: number;
-  characters: number;
-};
-
-type Settings =
-  | {
-      mode: "timed";
-      time: number;
-      quoteLength: "medium" | "long";
-      textStyle: "random" | "quote" | "code";
-    }
-  | {
-      mode: "words";
-      wordCount: number;
-      quoteLength: "medium" | "long";
-      textStyle: "random" | "quote" | "code";
-    };
+import {
+  parseStatsParams,
+  parseTestParams,
+  toTestParams,
+} from "@/lib/testParams";
 
 export default function Results() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ results?: string; settings?: string }>();
+  const params = useLocalSearchParams();
 
-  const results: Results | null = params.results
-    ? JSON.parse(params.results)
-    : null;
-
-  const settings: Settings | null = params.settings
-    ? JSON.parse(params.settings)
-    : null;
+  const results = parseStatsParams(params);
+  const settings = parseTestParams(params);
 
   if (!results || !settings) {
     return (
@@ -43,16 +23,14 @@ export default function Results() {
     );
   }
 
-  function handleTryAgain() {
-    router.push({
-      pathname: "/test",
-      params: { settings: JSON.stringify(settings) },
-    });
-  }
+  const handleTryAgain = () => {
+    router.replace({ pathname: "/test", params: toTestParams(settings) });
+  };
 
-  function handleBackToHome() {
-    router.push("/");
-  }
+  // Test was replaced by Results, so this pops straight back to Home.
+  const handleBackToHome = () => {
+    router.dismissTo("/");
+  };
 
   return (
     <SafeAreaView style={styles.container}>

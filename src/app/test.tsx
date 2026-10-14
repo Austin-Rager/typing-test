@@ -4,129 +4,79 @@ import { useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-const RANDOM_WORDS = [
-  "the",
-  "quick",
-  "brown",
-  "fox",
-  "jumps",
-  "over",
-  "lazy",
-  "dog",
-  "type",
-  "fast",
-];
-
-const QUOTES = {
-  medium: [
-    "The only way to do great work is to love what you do.",
-    "In the middle of difficulty lies opportunity.",
-  ],
-  long: [
-    "It is not the critic who counts; not the man who points out how the strong man stumbles, or where the doer of deeds could have done them better.",
-    "Success is not final, failure is not fatal: it is the courage to continue that counts, and that has made all the difference.",
-  ],
-};
-
-const CODE_SNIPPETS = {
-  medium: ["function add(a, b) {\n  return a + b;\n}"],
-  long: [
-    "function fibonacci(n) {\n  if (n <= 1) return n;\n  return fibonacci(n - 1) + fibonacci(n - 2);\n}",
-  ],
-};
-
-type Settings =
-  | {
-      mode: "timed";
-      time: number;
-      quoteLength: "medium" | "long";
-      textStyle: "random" | "quote" | "code";
-    }
-  | {
-      mode: "words";
-      wordCount: number;
-      quoteLength: "medium" | "long";
-      textStyle: "random" | "quote" | "code";
-    };
-
-function generateTargetText(settings: Settings): string {
-  switch (settings.textStyle) {
-    case "random": {
-      const wordCount =
-        settings.mode === "words" ? settings.wordCount : settings.time * 3;
-
-      const words: string[] = [];
-      for (let i = 0; i < wordCount; i++) {
-        words.push(
-          RANDOM_WORDS[Math.floor(Math.random() * RANDOM_WORDS.length)],
-        );
-      }
-      return words.join(" ");
-    }
-    case "quote": {
-      const quotes = QUOTES[settings.quoteLength];
-      return quotes[Math.floor(Math.random() * quotes.length)];
-    }
-    case "code": {
-      const snippets = CODE_SNIPPETS[settings.quoteLength];
-      return snippets[Math.floor(Math.random() * snippets.length)];
-    }
-  }
-}
-
+import { generateTargetText } from "@/lib/generateTargetText";
+import { computeStats } from "@/lib/stats";
+import { parseTestParams, toStatsParams, toTestParams } from "@/lib/testParams";
 
 export default function Test() {
   const router = useRouter();
-  const settingsParams = useLocalSearchParams<{ settings?: string }>();
-  const parsedParams = settingsParams.settings
-    ? (JSON.parse(settingsParams.settings) as Settings)
-    : null;
+  const config = parseTestParams(useLocalSearchParams());
 
-  const [targetText, setTargetText] = useState("");
+  const [targetText] = useState(() =>
+    config ? generateTargetText(config) : "",
+  );
   const [typedText, setTypedText] = useState("");
-
-  const inputRef = useRef<TextInput>(null)
-
-  const [startTime] = useState(Date.now());
   const [now, setNow] = useState(Date.now());
-  const elapsedSeconds = (now - startTime) / 1000;
+
+  const inputRef = useRef<TextInput>(null);
+
+  // finishTest reads only these refs, so it never sees stale state.
+  const targetRef = useRef(targetText);
+  const typedRef = useRef("");
+  const startTimeRef = useRef<number | null>(null);
   const hasEndedRef = useRef(false);
-  const mode = parsedParams?.mode;
 
-  const remaining =
-    parsedParams && parsedParams.mode === "timed"
-      ? parsedParams.time - elapsedSeconds
-      : null;
+  const timeLimitMs = config?.mode === "timed" ? config.time * 1000 : null;
 
-  useEffect(() => {
-    if (parsedParams) {
-      setTargetText(generateTargetText(parsedParams));
-    }
-  }, []);
+  // The clock starts on the first keystroke, so the full time shows until then.
+  const remainingMs =
+    timeLimitMs === null
+      ? null
+      : startTimeRef.current === null
+        ? timeLimitMs
+        : timeLimitMs - (now - startTimeRef.current);
+
+  function finishTest() {
+    if (hasEndedRef.current || !config) return;
+    hasEndedRef.current = true;
+
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+    const elapsedMs =
+      startTimeRef.current === null ? 0 : Date.now() - startTimeRef.current;
+    // The interval can fire a little after time is up; don't count that overshoot.
+    const cappedMs =
+      timeLimitMs === null ? elapsedMs : Math.min(elapsedMs, timeLimitMs);
+
+    const stats = computeStats(targetRef.current, typedRef.current, cappedMs);
+
+    router.replace({
+      pathname: "/result",
+      params: { ...toTestParams(config), ...toStatsParams(stats) },
+    });
+  }
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
   useEffect(() => {
-  const interval = setInterval(() => setNow(Date.now()), 250);
-  return () => clearInterval(interval);
+    const interval = setInterval(() => {
+      const current = Date.now();
+      setNow(current);
+
+      if (
+        timeLimitMs !== null &&
+        startTimeRef.current !== null &&
+        current - startTimeRef.current >= timeLimitMs
+      ) {
+        finishTest();
+      }
+    }, 250);
+    return () => clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-  if (mode === "timed" && remaining !== null && remaining <= 0) {
-    endTest();
-    }
-  }, [remaining]);
-
-  useEffect(() => {
-    if (mode === "words" && typedText.length >= targetText.length && targetText.length > 0) {
-      endTest();
-    }
-  }, [typedText]);
-
-
-  if (!parsedParams) {
+  if (!config) {
     return (
       <View style={styles.container}>
         <Text style={styles.errorText}>No settings provided.</Text>
@@ -134,10 +84,8 @@ export default function Test() {
     );
   }
 
-  const { quoteLength, textStyle } = parsedParams;
+  const { mode, quoteLength, textStyle } = config;
 
-  // Depends on typedText, which changes every keystroke — must live in the
-  // component body so it always sees the current values.
   function getCharStyle(i: number) {
     if (i < typedText.length) {
       return typedText[i] === targetText[i]
@@ -150,60 +98,39 @@ export default function Test() {
     return styles.untypedChar;
   }
 
-  function endTest(){
-    if (hasEndedRef.current) return;
-    hasEndedRef.current = true;
-
-    console.log("test ended")
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
-    let correctChars = 0;
-    for (let i = 0; i < typedText.length; i++) {
-      if (typedText[i] === targetText[i]) correctChars++;
-    }
-
-    const elapsedMinutes = elapsedSeconds / 60;
-    const wpm = Math.round((correctChars / 5) / elapsedMinutes);
-    const accuracy = typedText.length > 0 ? Math.round((correctChars / typedText.length) * 100) : 0;
-    const errors = typedText.length - correctChars;
-
-    const results = {
-      wpm,
-      accuracy,
-      errors,
-      characters: typedText.length,
-    };
-
-    router.push({
-      pathname: "/result",
-      params: {
-        results: JSON.stringify(results),
-        settings: JSON.stringify(parsedParams),
-      },
-    });
-  }
-
   function handleChangeText(newText: string) {
-  setTypedText(newText);
+    if (hasEndedRef.current) return;
 
-  const newIndex = newText.length - 1;
-  if (newIndex >= 0 && newText[newIndex] !== targetText[newIndex]) {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    if (startTimeRef.current === null && newText.length > 0) {
+      startTimeRef.current = Date.now();
     }
-  } 
 
+    typedRef.current = newText;
+    setTypedText(newText);
 
+    const newIndex = newText.length - 1;
+    if (newIndex >= 0 && newText[newIndex] !== targetText[newIndex]) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    }
+
+    // Any mode ends once the whole text is typed (maxLength stops input there).
+    if (targetText.length > 0 && newText.length >= targetText.length) {
+      finishTest();
+    }
+  }
 
   return (
     <SafeAreaView style={styles.container}>
       <Text>
         {mode === "timed"
-          ? `Time: ${parsedParams.time}`
-          : `Word count: ${parsedParams.wordCount}`}
+          ? `Time: ${config.time}`
+          : `Word count: ${config.wordCount}`}
       </Text>
       <Text>Quote length: {quoteLength}</Text>
       <Text>Text style: {textStyle}</Text>
-      {mode === "timed" && <Text>{Math.ceil(remaining!)}</Text>}
+      {remainingMs !== null && (
+        <Text>{Math.max(0, Math.ceil(remainingMs / 1000))}</Text>
+      )}
       <Text style={styles.targetText}>
         {targetText.split("").map((char, i) => (
           <Text key={i} style={getCharStyle(i)}>
@@ -214,6 +141,7 @@ export default function Test() {
       <TextInput
         value={typedText}
         onChangeText={handleChangeText}
+        maxLength={targetText.length}
         placeholder="Click here to type"
         autoCorrect={false}
         autoCapitalize="none"

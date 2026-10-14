@@ -2,9 +2,8 @@ import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
-type Mode = "timed" | "words";
-type QuoteLength = "medium" | "long";
-type TextStyleOption = "random" | "quote" | "code";
+import { toTestParams } from "@/lib/testParams";
+import type { Mode, QuoteLength, TextStyleOption } from "@/types/test";
 
 const TIME_OPTIONS = [30, 60, 120];
 const WORD_OPTIONS = [10, 30, 50];
@@ -21,13 +20,9 @@ export default function Home() {
   const [textStyle, setTextStyle] = useState<TextStyleOption>("random");
 
   const handleStart = () => {
-    const settings =
-      mode === "timed"
-        ? { mode, time, quoteLength, textStyle }
-        : { mode, wordCount, quoteLength, textStyle };
     router.push({
       pathname: "/test",
-      params: { settings: JSON.stringify(settings) },
+      params: toTestParams({ mode, time, wordCount, quoteLength, textStyle }),
     });
   };
 
