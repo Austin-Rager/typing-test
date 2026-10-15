@@ -4,13 +4,16 @@ import { useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { useTheme, type Theme } from "@/hooks/useTheme";
 import { generateTargetText } from "@/lib/generateTargetText";
 import { computeStats } from "@/lib/stats";
 import { parseTestParams, toStatsParams, toTestParams } from "@/lib/testParams";
+import { withAlpha } from "@/theme/colors";
 
 export default function Test() {
   const router = useRouter();
   const config = parseTestParams(useLocalSearchParams());
+  const styles = makeStyles(useTheme());
 
   const [targetText] = useState(() =>
     config ? generateTargetText(config) : "",
@@ -121,15 +124,17 @@ export default function Test() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Text>
+      <Text style={styles.infoText}>
         {mode === "timed"
           ? `Time: ${config.time}`
           : `Word count: ${config.wordCount}`}
       </Text>
-      <Text>Quote length: {quoteLength}</Text>
-      <Text>Text style: {textStyle}</Text>
+      <Text style={styles.infoText}>Quote length: {quoteLength}</Text>
+      <Text style={styles.infoText}>Text style: {textStyle}</Text>
       {remainingMs !== null && (
-        <Text>{Math.max(0, Math.ceil(remainingMs / 1000))}</Text>
+        <Text style={styles.countdown}>
+          {Math.max(0, Math.ceil(remainingMs / 1000))}
+        </Text>
       )}
       <Text style={styles.targetText}>
         {targetText.split("").map((char, i) => (
@@ -152,34 +157,50 @@ export default function Test() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16,
-  },
-  errorText: {
-    color: "red",
-  },
-  targetText: {
-    marginTop: 16,
-    fontSize: 18,
-  },
-  correctChar: {
-    color: "black",
-  },
-  incorrectChar: {
-    color: "red",
-  },
-  currentChar: {
-    backgroundColor: "#cce5ff",
-  },
-  untypedChar: {
-    color: "gray",
-  },
-  hiddenInput: {
-    position: "absolute",
-    opacity: 0,
-    height: 1,
-    width: 1,
-  },
-});
+function makeStyles({ colors, fonts, spacing, textStyles, typingFontSize }: Theme) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      padding: spacing.lg,
+      backgroundColor: colors.bg,
+    },
+    errorText: {
+      ...textStyles.body,
+      color: colors.danger,
+    },
+    infoText: {
+      ...textStyles.caption,
+      color: colors.muted,
+    },
+    countdown: {
+      ...textStyles.stat,
+      color: colors.accent,
+    },
+    targetText: {
+      marginTop: spacing.lg,
+      fontFamily: fonts.mono,
+      fontSize: typingFontSize,
+      lineHeight: typingFontSize * 1.6,
+    },
+    correctChar: {
+      color: colors.text,
+    },
+    incorrectChar: {
+      color: colors.danger,
+      backgroundColor: withAlpha(colors.danger, 0.15),
+    },
+    currentChar: {
+      color: colors.text,
+      backgroundColor: withAlpha(colors.accent, 0.25),
+    },
+    untypedChar: {
+      color: colors.muted,
+    },
+    hiddenInput: {
+      position: "absolute",
+      opacity: 0,
+      height: 1,
+      width: 1,
+    },
+  });
+}

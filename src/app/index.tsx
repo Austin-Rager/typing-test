@@ -1,7 +1,13 @@
 import { useRouter } from "expo-router";
-import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useState, type ReactNode } from "react";
+import { StyleSheet, Text, View } from "react-native";
 
+import { AppButton } from "@/components/AppButton";
+import { Card } from "@/components/Card";
+import { OptionButton } from "@/components/OptionButton";
+import { Screen } from "@/components/Screen";
+import { SectionLabel } from "@/components/SectionLabel";
+import { useTheme, type Theme } from "@/hooks/useTheme";
 import { toTestParams } from "@/lib/testParams";
 import type { Mode, QuoteLength, TextStyleOption } from "@/types/test";
 
@@ -10,8 +16,13 @@ const WORD_OPTIONS = [10, 30, 50];
 const QUOTE_LENGTH_OPTIONS: QuoteLength[] = ["medium", "long"];
 const TEXT_STYLE_OPTIONS: TextStyleOption[] = ["random", "quote", "code"];
 
+function capitalize(value: string) {
+  return value[0].toUpperCase() + value.slice(1);
+}
+
 export default function Home() {
   const router = useRouter();
+  const styles = makeStyles(useTheme());
 
   const [mode, setMode] = useState<Mode>("timed");
   const [time, setTime] = useState(60);
@@ -27,16 +38,16 @@ export default function Home() {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Type Test</Text>
+    <Screen scroll>
+      <View style={styles.header}>
+        <Text style={styles.title} accessibilityRole="header">
+          Type Test
+        </Text>
+        <Text style={styles.subtitle}>Pick a setup, then start typing.</Text>
+      </View>
 
-      <Pressable style={styles.startButton} onPress={handleStart}>
-        <Text style={styles.startButtonText}>Start</Text>
-      </Pressable>
-
-      <View style={styles.section}>
-        <Text style={styles.label}>Mode</Text>
-        <View style={styles.row}>
+      <Card>
+        <Section label="Mode">
           <OptionButton
             label="Timed"
             selected={mode === "timed"}
@@ -47,142 +58,89 @@ export default function Home() {
             selected={mode === "words"}
             onPress={() => setMode("words")}
           />
-        </View>
-      </View>
+        </Section>
 
-      <View
-        style={[styles.section, mode !== "timed" && styles.disabledSection]}
-      >
-        <Text style={styles.label}>Time</Text>
-        <View style={styles.row}>
+        <Section label="Time" disabled={mode !== "timed"}>
           {TIME_OPTIONS.map((option) => (
             <OptionButton
               key={option}
               label={`${option}s`}
+              accessibilityLabel={`${option} seconds`}
               selected={mode === "timed" && time === option}
               disabled={mode !== "timed"}
               onPress={() => setTime(option)}
             />
           ))}
-        </View>
-      </View>
+        </Section>
 
-      <View
-        style={[styles.section, mode !== "words" && styles.disabledSection]}
-      >
-        <Text style={styles.label}>Word count</Text>
-        <View style={styles.row}>
+        <Section label="Word count" disabled={mode !== "words"}>
           {WORD_OPTIONS.map((option) => (
             <OptionButton
               key={option}
               label={`${option}`}
+              accessibilityLabel={`${option} words`}
               selected={mode === "words" && wordCount === option}
               disabled={mode !== "words"}
               onPress={() => setWord(option)}
             />
           ))}
-        </View>
-      </View>
+        </Section>
+      </Card>
 
-      <View style={styles.section}>
-        <Text style={styles.label}>Quote length</Text>
-        <View style={styles.row}>
-          {QUOTE_LENGTH_OPTIONS.map((option) => (
-            <OptionButton
-              key={option}
-              label={option[0].toUpperCase() + option.slice(1)}
-              selected={quoteLength === option}
-              onPress={() => setQuote(option)}
-            />
-          ))}
-        </View>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.label}>Text style</Text>
-        <View style={styles.row}>
+      <Card>
+        <Section label="Text style">
           {TEXT_STYLE_OPTIONS.map((option) => (
             <OptionButton
               key={option}
-              label={option[0].toUpperCase() + option.slice(1)}
+              label={capitalize(option)}
               selected={textStyle === option}
               onPress={() => setTextStyle(option)}
             />
           ))}
-        </View>
-      </View>
+        </Section>
+
+        <Section label="Quote length">
+          {QUOTE_LENGTH_OPTIONS.map((option) => (
+            <OptionButton
+              key={option}
+              label={capitalize(option)}
+              selected={quoteLength === option}
+              onPress={() => setQuote(option)}
+            />
+          ))}
+        </Section>
+      </Card>
+
+      <AppButton title="Start test" onPress={handleStart} />
+    </Screen>
+  );
+}
+
+function Section({
+  label,
+  disabled,
+  children,
+}: {
+  label: string;
+  disabled?: boolean;
+  children: ReactNode;
+}) {
+  const styles = makeStyles(useTheme());
+  return (
+    <View style={[styles.section, disabled && styles.disabled]}>
+      <SectionLabel>{label}</SectionLabel>
+      <View style={styles.row}>{children}</View>
     </View>
   );
 }
 
-function OptionButton({
-  label,
-  selected,
-  disabled,
-  onPress,
-}: {
-  label: string;
-  selected: boolean;
-  disabled?: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      style={[styles.optionButton, selected && styles.optionButtonSelected]}
-      disabled={disabled}
-      onPress={onPress}
-    >
-      <Text
-        style={[
-          styles.optionButtonText,
-          selected && styles.optionButtonTextSelected,
-        ]}
-      >
-        {label}
-      </Text>
-    </Pressable>
-  );
+function makeStyles({ colors, spacing, textStyles }: Theme) {
+  return StyleSheet.create({
+    header: { gap: spacing.xs, marginTop: spacing.sm },
+    title: { ...textStyles.largeTitle, color: colors.text },
+    subtitle: { ...textStyles.body, color: colors.muted },
+    section: { gap: spacing.sm },
+    disabled: { opacity: 0.4 },
+    row: { flexDirection: "row", gap: spacing.sm },
+  });
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#fff",
-    paddingHorizontal: 20,
-    paddingTop: 60,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: "600",
-    textAlign: "center",
-    marginBottom: 32,
-  },
-  startButton: {
-    alignSelf: "center",
-    backgroundColor: "#1a1a1a",
-    paddingVertical: 14,
-    paddingHorizontal: 48,
-    borderRadius: 8,
-    marginBottom: 32,
-  },
-  startButtonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
-  section: { marginBottom: 20 },
-  disabledSection: { opacity: 0.4 },
-  label: { fontSize: 13, color: "#666", marginBottom: 8 },
-  row: { flexDirection: "row", gap: 8 },
-  optionButton: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
-    paddingVertical: 10,
-    alignItems: "center",
-  },
-  optionButtonSelected: {
-    borderColor: "#1a1a1a",
-    borderWidth: 2,
-    backgroundColor: "#f0f0f0",
-  },
-  optionButtonText: { fontSize: 14, color: "#1a1a1a" },
-  optionButtonTextSelected: { fontWeight: "600" },
-});

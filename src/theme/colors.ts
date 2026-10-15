@@ -44,3 +44,9 @@ export const ACCENTS: Record<AccentName, { light: string; dark: string }> = {
   amber: { light: "#B45309", dark: "#FBBF24" },
   rose: { light: "#BE123C", dark: "#FB7185" },
 };
+
+// Turns a "#RRGGBB" palette color into "#RRGGBBAA", e.g. for tinted backgrounds.
+export function withAlpha(hex: string, alpha: number): string {
+  const a = Math.round(Math.min(Math.max(alpha, 0), 1) * 255);
+  return hex + a.toString(16).padStart(2, "0").toUpperCase();
+}
