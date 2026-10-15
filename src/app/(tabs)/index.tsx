@@ -38,7 +38,7 @@ export default function Home() {
   };
 
   return (
-    <Screen scroll>
+    <Screen scroll edges={["top", "left", "right"]}>
       <View style={styles.header}>
         <Text style={styles.title} accessibilityRole="header">
           Type Test

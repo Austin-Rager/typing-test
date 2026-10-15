@@ -12,6 +12,7 @@ import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { SettingsProvider } from "@/context/SettingsContext";
 import { useTheme } from "@/hooks/useTheme";
@@ -38,9 +39,12 @@ export default function RootLayout() {
   if (!ready) return null;
 
   return (
-    <SettingsProvider>
-      <RootStack />
-    </SettingsProvider>
+    // Needed at the root for gesture-based components (swipe-to-delete later).
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SettingsProvider>
+        <RootStack />
+      </SettingsProvider>
+    </GestureHandlerRootView>
   );
 }
 
@@ -57,8 +61,9 @@ function RootStack() {
           contentStyle: { backgroundColor: colors.bg },
         }}
       >
-        <Stack.Screen name="index" />
-        <Stack.Screen name="test" />
+        <Stack.Screen name="(tabs)" />
+        {/* No swipe-back mid-test; test and result sit outside (tabs) so they hide the tab bar. */}
+        <Stack.Screen name="test" options={{ gestureEnabled: false }} />
         <Stack.Screen name="result" />
       </Stack>
     </>
