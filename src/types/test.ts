@@ -28,3 +28,15 @@ export type TestResult = TestStats &
     configKey: string;
     createdAt: number; // ms since epoch
   };
+
+export type CustomTextType = "quote" | "code";
+
+// A user-added text from the custom_texts table.
+export type CustomText = {
+  id: number;
+  title: string;
+  body: string;
+  type: CustomTextType;
+  bestWpm: number | null; // null until the text has been practiced
+  createdAt: number; // ms since epoch
+};

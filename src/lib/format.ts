@@ -14,9 +14,14 @@ export function formatDate(ms: number): string {
 }
 
 // e.g. "60s · random", "30 words · quote · long", "My text: Gettysburg"
-// Custom texts need their title passed in, since the config only has the id.
-export function formatConfig(config: TestConfig, customTitle?: string): string {
+// Custom texts need their title passed in, since the config only has the id:
+// undefined means the title isn't known, null means the text was deleted.
+export function formatConfig(
+  config: TestConfig,
+  customTitle?: string | null,
+): string {
   if (config.textStyle === "custom") {
+    if (customTitle === null) return "Deleted text";
     return customTitle ? `My text: ${customTitle}` : "My text";
   }
 

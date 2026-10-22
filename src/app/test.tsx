@@ -5,11 +5,13 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { Alert, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { getCustomText, updateBestWpm } from "@/db/customTexts";
 import { insertTestResult } from "@/db/testResults";
 import { useTheme, type Theme } from "@/hooks/useTheme";
 import { generateTargetText } from "@/lib/generateTargetText";
 import { computeStats } from "@/lib/stats";
 import { parseTestParams, toStatsParams, toTestParams } from "@/lib/testParams";
+import { normalizeText } from "@/lib/validateText";
 import { withAlpha } from "@/theme/colors";
 
 export default function Test() {
@@ -18,8 +20,11 @@ export default function Test() {
   const config = parseTestParams(useLocalSearchParams());
   const styles = makeStyles(useTheme());
 
-  const [targetText] = useState(() =>
-    config ? generateTargetText(config) : "",
+  // Custom texts live in the DB, so they start empty and load below.
+  const customTextId =
+    config?.textStyle === "custom" ? config.textId : undefined;
+  const [targetText, setTargetText] = useState(() =>
+    config && customTextId === undefined ? generateTargetText(config) : "",
   );
   const [typedText, setTypedText] = useState("");
   const [now, setNow] = useState(() => Date.now());
@@ -65,7 +70,16 @@ export default function Test() {
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-    insertTestResult(db, config, stats)
+    // A failed best-WPM update shouldn't stop the result from being saved.
+    const saveBest =
+      customTextId === undefined
+        ? Promise.resolve()
+        : updateBestWpm(db, customTextId, stats.wpm).catch((e) =>
+            console.warn("Couldn't update best WPM", e),
+          );
+
+    saveBest
+      .then(() => insertTestResult(db, config, stats))
       .then(
         (id) => ({ resultId: String(id) }),
         (e) => {
@@ -95,6 +109,26 @@ export default function Test() {
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  useEffect(() => {
+    if (customTextId === undefined) return;
+    getCustomText(db, customTextId)
+      .then((text) => {
+        if (!text) {
+          Alert.alert("Text not found", "It may have been deleted.");
+          router.back();
+          return;
+        }
+        const body = normalizeText(text.body);
+        targetRef.current = body;
+        setTargetText(body);
+      })
+      .catch((e) => {
+        console.warn("Couldn't load text", e);
+        Alert.alert("Couldn't load text");
+        router.back();
+      });
+  }, [db, router, customTextId]);
 
   useEffect(() => {
     const interval = setInterval(onTick, 250);
@@ -159,13 +193,17 @@ export default function Test() {
           {Math.max(0, Math.ceil(remainingMs / 1000))}
         </Text>
       )}
-      <Text style={styles.targetText}>
-        {targetText.split("").map((char, i) => (
-          <Text key={i} style={getCharStyle(i)}>
-            {char}
-          </Text>
-        ))}
-      </Text>
+      {targetText === "" ? (
+        <Text style={styles.infoText}>Loading text…</Text>
+      ) : (
+        <Text style={styles.targetText}>
+          {targetText.split("").map((char, i) => (
+            <Text key={i} style={getCharStyle(i)}>
+              {char}
+            </Text>
+          ))}
+        </Text>
+      )}
       <TextInput
         value={typedText}
         onChangeText={handleChangeText}

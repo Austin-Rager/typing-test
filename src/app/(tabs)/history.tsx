@@ -14,6 +14,7 @@ import { SectionLabel } from "@/components/SectionLabel";
 import { StatBox } from "@/components/StatBox";
 import { SwipeableRow } from "@/components/SwipeableRow";
 import { useSettings } from "@/context/SettingsContext";
+import { getCustomTexts } from "@/db/customTexts";
 import {
   clearTestResults,
   deleteTestResult,
@@ -29,6 +30,7 @@ const CHART_POINTS = 30;
 type HistoryData = {
   summary: { best: number; average: number; total: number };
   results: TestResult[];
+  textTitles: Map<number, string>; // custom text id -> title
 };
 
 export default function History() {
@@ -41,8 +43,11 @@ export default function History() {
   const [data, setData] = useState<HistoryData | null>(null);
 
   const load = useCallback(() => {
-    return Promise.all([getSummary(db), getAllResults(db)])
-      .then(([summary, results]) => setData({ summary, results }))
+    return Promise.all([getSummary(db), getAllResults(db), getCustomTexts(db)])
+      .then(([summary, results, texts]) => {
+        const textTitles = new Map(texts.map((t) => [t.id, t.title]));
+        setData({ summary, results, textTitles });
+      })
       .catch((e) => console.warn("Couldn't load history", e));
   }, [db]);
 
@@ -119,6 +124,11 @@ export default function History() {
           <SwipeableRow onDelete={() => handleDelete(item.id)}>
             <HistoryItem
               result={item}
+              customTitle={
+                item.textId === undefined
+                  ? undefined
+                  : (data?.textTitles.get(item.textId) ?? null)
+              }
               onPress={() =>
                 router.push({
                   pathname: "/result",

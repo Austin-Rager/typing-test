@@ -1,20 +1,33 @@
-import { useRouter } from "expo-router";
-import { useState, type ReactNode } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useSQLiteContext } from "expo-sqlite";
+import { useCallback, useState, type ReactNode } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { AppButton } from "@/components/AppButton";
 import { Card } from "@/components/Card";
 import { OptionButton } from "@/components/OptionButton";
 import { Screen } from "@/components/Screen";
 import { SectionLabel } from "@/components/SectionLabel";
+import { getCustomTexts } from "@/db/customTexts";
 import { useTheme, type Theme } from "@/hooks/useTheme";
 import { toTestParams } from "@/lib/testParams";
-import type { Mode, QuoteLength, TextStyleOption } from "@/types/test";
+import { MIN_TOUCH } from "@/theme/tokens";
+import type {
+  CustomText,
+  Mode,
+  QuoteLength,
+  TextStyleOption,
+} from "@/types/test";
 
 const TIME_OPTIONS = [30, 60, 120];
 const WORD_OPTIONS = [10, 30, 50];
 const QUOTE_LENGTH_OPTIONS: QuoteLength[] = ["medium", "long"];
-const TEXT_STYLE_OPTIONS: TextStyleOption[] = ["random", "quote", "code"];
+const TEXT_STYLE_OPTIONS: { value: TextStyleOption; label: string }[] = [
+  { value: "random", label: "Random" },
+  { value: "quote", label: "Quote" },
+  { value: "code", label: "Code" },
+  { value: "custom", label: "Mine" },
+];
 
 function capitalize(value: string) {
   return value[0].toUpperCase() + value.slice(1);
@@ -22,6 +35,7 @@ function capitalize(value: string) {
 
 export default function Home() {
   const router = useRouter();
+  const db = useSQLiteContext();
   const styles = makeStyles(useTheme());
 
   const [mode, setMode] = useState<Mode>("timed");
@@ -29,11 +43,39 @@ export default function Home() {
   const [wordCount, setWord] = useState(30);
   const [quoteLength, setQuote] = useState<QuoteLength>("medium");
   const [textStyle, setTextStyle] = useState<TextStyleOption>("random");
+  const [customTexts, setCustomTexts] = useState<CustomText[]>([]);
+  const [customTextId, setCustomTextId] = useState<number | null>(null);
+
+  // Home stays mounted as a tab, so refresh when texts are added or deleted elsewhere.
+  useFocusEffect(
+    useCallback(() => {
+      getCustomTexts(db)
+        .then(setCustomTexts)
+        .catch((e) => console.warn("Couldn't load texts", e));
+    }, [db]),
+  );
+
+  const hasCustomTexts = customTexts.length > 0;
+  // Falls back if the chosen text (or every text) was deleted in the meantime.
+  const effectiveStyle =
+    textStyle === "custom" && !hasCustomTexts ? "random" : textStyle;
+  const isCustom = effectiveStyle === "custom";
+  const selectedText =
+    customTexts.find((t) => t.id === customTextId) ?? customTexts[0];
+  // Custom texts are typed in full, so they always run in words mode.
+  const effectiveMode: Mode = isCustom ? "words" : mode;
 
   const handleStart = () => {
     router.push({
       pathname: "/test",
-      params: toTestParams({ mode, time, wordCount, quoteLength, textStyle }),
+      params: toTestParams({
+        mode: effectiveMode,
+        time,
+        wordCount,
+        quoteLength,
+        textStyle: effectiveStyle,
+        ...(isCustom && { textId: selectedText.id }),
+      }),
     });
   };
 
@@ -47,40 +89,48 @@ export default function Home() {
       </View>
 
       <Card>
-        <Section label="Mode">
+        <Section label="Mode" disabled={isCustom}>
           <OptionButton
             label="Timed"
-            selected={mode === "timed"}
+            selected={effectiveMode === "timed"}
+            disabled={isCustom}
             onPress={() => setMode("timed")}
           />
           <OptionButton
             label="Words"
-            selected={mode === "words"}
+            selected={effectiveMode === "words"}
+            disabled={isCustom}
             onPress={() => setMode("words")}
           />
         </Section>
 
-        <Section label="Time" disabled={mode !== "timed"}>
+        <Section label="Time" disabled={effectiveMode !== "timed"}>
           {TIME_OPTIONS.map((option) => (
             <OptionButton
               key={option}
               label={`${option}s`}
               accessibilityLabel={`${option} seconds`}
-              selected={mode === "timed" && time === option}
-              disabled={mode !== "timed"}
+              selected={effectiveMode === "timed" && time === option}
+              disabled={effectiveMode !== "timed"}
               onPress={() => setTime(option)}
             />
           ))}
         </Section>
 
-        <Section label="Word count" disabled={mode !== "words"}>
+        {/* A custom text is typed in full, so its length isn't a word count. */}
+        <Section
+          label="Word count"
+          disabled={effectiveMode !== "words" || isCustom}
+        >
           {WORD_OPTIONS.map((option) => (
             <OptionButton
               key={option}
               label={`${option}`}
               accessibilityLabel={`${option} words`}
-              selected={mode === "words" && wordCount === option}
-              disabled={mode !== "words"}
+              selected={
+                effectiveMode === "words" && !isCustom && wordCount === option
+              }
+              disabled={effectiveMode !== "words" || isCustom}
               onPress={() => setWord(option)}
             />
           ))}
@@ -89,26 +139,64 @@ export default function Home() {
 
       <Card>
         <Section label="Text style">
-          {TEXT_STYLE_OPTIONS.map((option) => (
-            <OptionButton
-              key={option}
-              label={capitalize(option)}
-              selected={textStyle === option}
-              onPress={() => setTextStyle(option)}
-            />
-          ))}
+          {TEXT_STYLE_OPTIONS.map((option) => {
+            const unavailable = option.value === "custom" && !hasCustomTexts;
+            return (
+              <OptionButton
+                key={option.value}
+                label={option.label}
+                accessibilityLabel={
+                  option.value === "custom" ? "My texts" : option.label
+                }
+                selected={effectiveStyle === option.value}
+                disabled={unavailable}
+                onPress={() => setTextStyle(option.value)}
+              />
+            );
+          })}
         </Section>
 
-        <Section label="Quote length">
-          {QUOTE_LENGTH_OPTIONS.map((option) => (
-            <OptionButton
-              key={option}
-              label={capitalize(option)}
-              selected={quoteLength === option}
-              onPress={() => setQuote(option)}
-            />
-          ))}
-        </Section>
+        {!hasCustomTexts && (
+          <Pressable
+            onPress={() => router.navigate("/texts")}
+            accessibilityRole="link"
+            style={styles.link}
+          >
+            <Text style={styles.linkText}>Add a text in the Texts tab</Text>
+          </Pressable>
+        )}
+
+        {isCustom ? (
+          <View style={styles.section}>
+            <SectionLabel>Text</SectionLabel>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.row}
+            >
+              {customTexts.map((text) => (
+                <OptionButton
+                  key={text.id}
+                  compact
+                  label={text.title}
+                  selected={text.id === selectedText.id}
+                  onPress={() => setCustomTextId(text.id)}
+                />
+              ))}
+            </ScrollView>
+          </View>
+        ) : (
+          <Section label="Quote length">
+            {QUOTE_LENGTH_OPTIONS.map((option) => (
+              <OptionButton
+                key={option}
+                label={capitalize(option)}
+                selected={quoteLength === option}
+                onPress={() => setQuote(option)}
+              />
+            ))}
+          </Section>
+        )}
       </Card>
 
       <AppButton title="Start test" onPress={handleStart} />
@@ -142,5 +230,11 @@ function makeStyles({ colors, spacing, textStyles }: Theme) {
     section: { gap: spacing.sm },
     disabled: { opacity: 0.4 },
     row: { flexDirection: "row", gap: spacing.sm },
+    link: { minHeight: MIN_TOUCH, justifyContent: "center", marginTop: -spacing.sm },
+    linkText: {
+      ...textStyles.caption,
+      color: colors.accent,
+      textDecorationLine: "underline",
+    },
   });
 }

@@ -8,8 +8,10 @@ import { Card } from "@/components/Card";
 import { Screen } from "@/components/Screen";
 import { SectionLabel } from "@/components/SectionLabel";
 import { StatBox } from "@/components/StatBox";
+import { getCustomText } from "@/db/customTexts";
 import { getTestResult } from "@/db/testResults";
 import { useTheme, type Theme } from "@/hooks/useTheme";
+import { formatConfig } from "@/lib/format";
 import {
   parseStatsParams,
   parseTestParams,
@@ -30,12 +32,20 @@ export default function Results() {
   const resultId = Number.isInteger(idParam) && idParam > 0 ? idParam : null;
 
   const [saved, setSaved] = useState<TestResult | null>(null);
+  // For custom-text results: the text's title, or null if it was deleted.
+  const [customTitle, setCustomTitle] = useState<string | null>();
   const [loading, setLoading] = useState(resultId !== null);
 
   useEffect(() => {
     if (resultId === null) return;
     getTestResult(db, resultId)
-      .then(setSaved)
+      .then((result) => {
+        setSaved(result);
+        if (result?.textId === undefined) return;
+        return getCustomText(db, result.textId).then((text) =>
+          setCustomTitle(text?.title ?? null),
+        );
+      })
       .catch((e) => console.warn("Couldn't load result", e))
       .finally(() => setLoading(false));
   }, [db, resultId]);
@@ -78,11 +88,7 @@ export default function Results() {
     router.replace({ pathname: "/test", params: toTestParams(settings) });
   };
 
-  const configText =
-    (settings.mode === "timed"
-      ? `${settings.time} seconds`
-      : `${settings.wordCount} words`) +
-    ` · ${settings.quoteLength} ${settings.textStyle}`;
+  const configText = formatConfig(settings, customTitle);
 
   return (
     <Screen scroll>

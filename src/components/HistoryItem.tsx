@@ -6,16 +6,18 @@ import type { TestResult } from "@/types/test";
 
 type Props = {
   result: TestResult;
+  // For custom-text results: the text's title, or null if it was deleted.
+  customTitle?: string | null;
   onPress?: () => void;
   // Exposed as a screen reader action, so deleting doesn't need a swipe.
   onDelete?: () => void;
 };
 
-export function HistoryItem({ result, onPress, onDelete }: Props) {
+export function HistoryItem({ result, customTitle, onPress, onDelete }: Props) {
   const theme = useTheme();
   const styles = makeStyles(theme);
 
-  const config = formatConfig(result);
+  const config = formatConfig(result, customTitle);
   const date = formatDate(result.createdAt);
   const errorLabel = result.errors === 1 ? "error" : "errors";
 
