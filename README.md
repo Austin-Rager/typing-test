@@ -24,11 +24,37 @@ I used expo-font for the jetbrains mono font.
 expo-haptics was used to buzz whenever you get a letter wrong and when the test finishes.
 
 ## Getting started
- 
+
 ```bash
 npm install
 npx expo start
 ```
+
+# Next Part of Project (Project 2) 10-11-2026
+
+## Features to be implemeted
+
+### Navigation and structure
+
+- Bottom tab bar with Test, History, Texts and Settings
+- Code split into reusable components (OptionButton, StatBox, HistoryItem, TextCard, TabBar, typing display)
+
+### Local data storage
+
+- Every finished test is saved to the device (WPM, accuracy, errors, date, mode, text style)
+- Custom texts you create are saved to the device
+- Settings are saved so they survive closing the app
+
+### History screen
+
+- Best, average and total-test summary cards
+- Line chart of WPM over time
+- List of past tests
+- Swipe to delete a test, and a clear-history option
+
+## Implement Gyroscope
+
+Implmenet a functionality that takes information from the gyroscope feature that can show the user how much they shake or move their phone and display that information to them.
 
 ## Author
 

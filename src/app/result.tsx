@@ -1,158 +1,201 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Pressable, StyleSheet, Text, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSQLiteContext } from "expo-sqlite";
+import { useEffect, useState } from "react";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
-type Results = {
-  wpm: number;
-  accuracy: number;
-  errors: number;
-  characters: number;
+import { AppButton } from "@/components/AppButton";
+import { Card } from "@/components/Card";
+import { WpmLineChart } from "@/components/charts/WpmLineChart";
+import { ConfigChips } from "@/components/ConfigChips";
+import { PersonalBestBadge } from "@/components/PersonalBestBadge";
+import { Screen } from "@/components/Screen";
+import { SectionLabel } from "@/components/SectionLabel";
+import { StatBox } from "@/components/StatBox";
+import { SteadinessMeter } from "@/components/SteadinessMeter";
+import { getCustomText } from "@/db/customTexts";
+import {
+  getBestWpm,
+  getRecentResults,
+  getTestResult,
+} from "@/db/testResults";
+import { useTheme, type Theme } from "@/hooks/useTheme";
+import { formatDuration } from "@/lib/format";
+import {
+  parseStatsParams,
+  parseTestParams,
+  toTestParams,
+} from "@/lib/testParams";
+import type { TestResult } from "@/types/test";
+
+const RECENT_COUNT = 7;
+
+type SavedData = {
+  result: TestResult;
+  // For custom-text results: the text's title, or null if it was deleted.
+  customTitle?: string | null;
+  previousBest: number | null; // best for this config before this test
+  recentWpm: number[]; // oldest to newest
 };
-
-type Settings =
-  | {
-      mode: "timed";
-      time: number;
-      quoteLength: "medium" | "long";
-      textStyle: "random" | "quote" | "code";
-    }
-  | {
-      mode: "words";
-      wordCount: number;
-      quoteLength: "medium" | "long";
-      textStyle: "random" | "quote" | "code";
-    };
 
 export default function Results() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ results?: string; settings?: string }>();
+  const db = useSQLiteContext();
+  const params = useLocalSearchParams();
+  const theme = useTheme();
+  const styles = makeStyles(theme);
 
-  const results: Results | null = params.results
-    ? JSON.parse(params.results)
-    : null;
+  // Normally Test passes just the saved row's id. If saving failed, it passes
+  // the config and stats as params instead, so there's no id to load.
+  const idParam = Number(params.resultId);
+  const resultId = Number.isInteger(idParam) && idParam > 0 ? idParam : null;
 
-  const settings: Settings | null = params.settings
-    ? JSON.parse(params.settings)
-    : null;
+  const [saved, setSaved] = useState<SavedData | null>(null);
+  const [loading, setLoading] = useState(resultId !== null);
 
-  if (!results || !settings) {
+  useEffect(() => {
+    if (resultId === null) return;
+    getTestResult(db, resultId)
+      .then((result) => {
+        if (!result) return;
+        return Promise.all([
+          getBestWpm(db, result.configKey, result.id),
+          getRecentResults(db, RECENT_COUNT),
+          result.textId === undefined
+            ? undefined
+            : getCustomText(db, result.textId).then((t) => t?.title ?? null),
+        ]).then(([previousBest, recent, customTitle]) =>
+          setSaved({
+            result,
+            customTitle,
+            previousBest,
+            recentWpm: recent.map((r) => r.wpm).reverse(),
+          }),
+        );
+      })
+      .catch((e) => console.warn("Couldn't load result", e))
+      .finally(() => setLoading(false));
+  }, [db, resultId]);
+
+  // A saved result holds both its stats and its config.
+  const results = resultId === null ? parseStatsParams(params) : saved?.result;
+  const settings = resultId === null ? parseTestParams(params) : saved?.result;
+
+  // Test was replaced by Results, so this pops straight back to Home.
+  const handleBackToHome = () => {
+    router.dismissTo("/");
+  };
+
+  if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
-        <Text style={styles.errorText}>No results to show.</Text>
-      </SafeAreaView>
+      <Screen>
+        <ActivityIndicator
+          style={styles.fill}
+          color={theme.colors.accent}
+          accessibilityLabel="Loading result"
+        />
+      </Screen>
     );
   }
 
-  function handleTryAgain() {
-    router.push({
-      pathname: "/test",
-      params: { settings: JSON.stringify(settings) },
-    });
+  if (!results || !settings) {
+    return (
+      <Screen>
+        <Text style={styles.errorText}>No results to show.</Text>
+        <AppButton
+          title="Back to home"
+          variant="secondary"
+          onPress={handleBackToHome}
+        />
+      </Screen>
+    );
   }
 
-  function handleBackToHome() {
-    router.push("/");
-  }
+  const handleTryAgain = () => {
+    router.replace({ pathname: "/test", params: toTestParams(settings) });
+  };
+
+  const isNewBest =
+    saved !== null &&
+    (saved.previousBest === null || results.wpm > saved.previousBest);
 
   return (
-    <SafeAreaView style={styles.container}>
-      <Text style={styles.wpmLabel}>words per minute</Text>
-      <Text style={styles.wpm}>{results.wpm}</Text>
-
-      <View style={styles.statGrid}>
-        <StatBox label="Accuracy" value={`${results.accuracy}%`} />
-        <StatBox
-          label="Time"
-          value={settings.mode === "timed" ? `${settings.time}s` : "—"}
-        />
-        <StatBox label="Errors" value={`${results.errors}`} danger />
-        <StatBox label="Characters" value={`${results.characters}`} />
-      </View>
-
-      <View style={styles.configRow}>
-        <Text style={styles.configLabel}>Test config</Text>
-        <Text style={styles.configValue}>
-          {settings.mode === "timed"
-            ? `${settings.time} seconds`
-            : `${settings.wordCount} words`}
-          {" · "}
-          {settings.quoteLength} {settings.textStyle}
+    <Screen scroll>
+      <View
+        style={styles.hero}
+        accessible
+        accessibilityLabel={`${results.wpm} words per minute`}
+      >
+        <Text style={styles.wpmLabel}>words per minute</Text>
+        <Text style={styles.wpm} maxFontSizeMultiplier={1.2}>
+          {results.wpm}
         </Text>
       </View>
 
-      <View style={styles.buttonColumn}>
-        <Pressable style={styles.primaryButton} onPress={handleTryAgain}>
-          <Text style={styles.primaryButtonText}>Try again</Text>
-        </Pressable>
-        <Pressable style={styles.secondaryButton} onPress={handleBackToHome}>
-          <Text style={styles.secondaryButtonText}>Back to home</Text>
-        </Pressable>
+      {isNewBest && (
+        <PersonalBestBadge
+          wpm={results.wpm}
+          previousBest={saved.previousBest}
+        />
+      )}
+
+      <View style={styles.statGrid}>
+        <View style={styles.statRow}>
+          <StatBox label="Accuracy" value={`${results.accuracy}%`} />
+          <StatBox label="Time taken" value={formatDuration(results.elapsedMs)} />
+        </View>
+        <View style={styles.statRow}>
+          <StatBox label="Errors" value={`${results.errors}`} tone="danger" />
+          <StatBox label="Characters" value={`${results.characters}`} />
+        </View>
       </View>
-    </SafeAreaView>
+
+      {/* Null for older results and phones without a gyroscope. */}
+      {saved?.result.avgMotion != null && (
+        <Card>
+          <SteadinessMeter motion={saved.result.avgMotion} />
+        </Card>
+      )}
+
+      <ConfigChips config={settings} customTitle={saved?.customTitle} />
+
+      {saved !== null && (
+        <Card>
+          <SectionLabel>{`Last ${RECENT_COUNT} tests`}</SectionLabel>
+          <WpmLineChart
+            data={saved.recentWpm}
+            height={80}
+            compact
+            highlightLast
+          />
+        </Card>
+      )}
+
+      <View style={styles.buttonColumn}>
+        <AppButton title="Try again" onPress={handleTryAgain} />
+        <AppButton
+          title="Back to home"
+          variant="secondary"
+          onPress={handleBackToHome}
+        />
+      </View>
+    </Screen>
   );
 }
 
-function StatBox({
-  label,
-  value,
-  danger,
-}: {
-  label: string;
-  value: string;
-  danger?: boolean;
-}) {
-  return (
-    <View style={styles.statBox}>
-      <Text style={styles.statLabel}>{label}</Text>
-      <Text style={[styles.statValue, danger && styles.statValueDanger]}>
-        {value}
-      </Text>
-    </View>
-  );
+function makeStyles({ colors, fonts, spacing, textStyles }: Theme) {
+  return StyleSheet.create({
+    fill: { flex: 1 },
+    errorText: { ...textStyles.body, color: colors.danger },
+    hero: { alignItems: "center", marginTop: spacing.xl },
+    wpmLabel: { ...textStyles.caption, color: colors.muted },
+    wpm: {
+      fontFamily: fonts.monoBold,
+      fontSize: 64,
+      lineHeight: 76,
+      color: colors.accent,
+    },
+    statGrid: { gap: spacing.md },
+    statRow: { flexDirection: "row", gap: spacing.md },
+    buttonColumn: { gap: spacing.md },
+  });
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20 },
-  errorText: { color: "red" },
-  wpmLabel: { textAlign: "center", color: "#666", fontSize: 13, marginTop: 24 },
-  wpm: { textAlign: "center", fontSize: 56, fontWeight: "600", marginBottom: 24 },
-  statGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 12,
-    marginBottom: 24,
-  },
-  statBox: {
-    flexBasis: "47%",
-    backgroundColor: "#f0f0f0",
-    borderRadius: 8,
-    padding: 12,
-  },
-  statLabel: { fontSize: 13, color: "#666" },
-  statValue: { fontSize: 22, fontWeight: "600", marginTop: 2 },
-  statValueDanger: { color: "red" },
-  configRow: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "#ccc",
-    paddingTop: 12,
-    marginBottom: 24,
-  },
-  configLabel: { fontSize: 13, color: "#666", marginBottom: 4 },
-  configValue: { fontSize: 14 },
-  buttonColumn: { gap: 10 },
-  primaryButton: {
-    backgroundColor: "#1a1a1a",
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  primaryButtonText: { color: "#fff", fontWeight: "600", fontSize: 16 },
-  secondaryButton: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  secondaryButtonText: { fontSize: 16 },
-});
