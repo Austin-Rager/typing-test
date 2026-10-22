@@ -10,11 +10,13 @@ import {
 import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
+import { SQLiteProvider } from "expo-sqlite";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { SettingsProvider } from "@/context/SettingsContext";
+import { migrateDbIfNeeded } from "@/db/migrate";
 import { useTheme } from "@/hooks/useTheme";
 
 // Keep the native splash up until fonts are ready, instead of a blank View.
@@ -42,7 +44,9 @@ export default function RootLayout() {
     // Needed at the root for gesture-based components (swipe-to-delete later).
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SettingsProvider>
-        <RootStack />
+        <SQLiteProvider databaseName="typing-test.db" onInit={migrateDbIfNeeded}>
+          <RootStack />
+        </SQLiteProvider>
       </SettingsProvider>
     </GestureHandlerRootView>
   );

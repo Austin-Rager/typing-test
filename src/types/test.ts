@@ -20,3 +20,11 @@ export type TestStats = {
   characters: number;
   elapsedMs: number;
 };
+
+// A finished test as stored in the test_results table.
+export type TestResult = TestStats &
+  TestConfig & {
+    id: number;
+    configKey: string;
+    createdAt: number; // ms since epoch
+  };

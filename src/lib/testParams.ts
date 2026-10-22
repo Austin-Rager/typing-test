@@ -77,7 +77,7 @@ export function parseTestParams(params: RawParams): TestConfig | null {
   };
 }
 
-// Interim until results are saved to the DB (T12): stats travel as flat params.
+// Fallback for when saving to the DB fails: stats travel as flat params instead.
 export function toStatsParams(stats: TestStats): Record<string, string> {
   return {
     wpm: String(stats.wpm),

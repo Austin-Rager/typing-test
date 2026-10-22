@@ -1,30 +1,65 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { StyleSheet, Text, View } from "react-native";
+import { useSQLiteContext } from "expo-sqlite";
+import { useEffect, useState } from "react";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { AppButton } from "@/components/AppButton";
 import { Card } from "@/components/Card";
 import { Screen } from "@/components/Screen";
 import { SectionLabel } from "@/components/SectionLabel";
 import { StatBox } from "@/components/StatBox";
+import { getTestResult } from "@/db/testResults";
 import { useTheme, type Theme } from "@/hooks/useTheme";
 import {
   parseStatsParams,
   parseTestParams,
   toTestParams,
 } from "@/lib/testParams";
+import type { TestResult } from "@/types/test";
 
 export default function Results() {
   const router = useRouter();
+  const db = useSQLiteContext();
   const params = useLocalSearchParams();
-  const styles = makeStyles(useTheme());
+  const theme = useTheme();
+  const styles = makeStyles(theme);
 
-  const results = parseStatsParams(params);
-  const settings = parseTestParams(params);
+  // Normally Test passes just the saved row's id. If saving failed, it passes
+  // the config and stats as params instead, so there's no id to load.
+  const idParam = Number(params.resultId);
+  const resultId = Number.isInteger(idParam) && idParam > 0 ? idParam : null;
+
+  const [saved, setSaved] = useState<TestResult | null>(null);
+  const [loading, setLoading] = useState(resultId !== null);
+
+  useEffect(() => {
+    if (resultId === null) return;
+    getTestResult(db, resultId)
+      .then(setSaved)
+      .catch((e) => console.warn("Couldn't load result", e))
+      .finally(() => setLoading(false));
+  }, [db, resultId]);
+
+  // A saved result holds both its stats and its config.
+  const results = resultId === null ? parseStatsParams(params) : saved;
+  const settings = resultId === null ? parseTestParams(params) : saved;
 
   // Test was replaced by Results, so this pops straight back to Home.
   const handleBackToHome = () => {
     router.dismissTo("/");
   };
+
+  if (loading) {
+    return (
+      <Screen>
+        <ActivityIndicator
+          style={styles.fill}
+          color={theme.colors.accent}
+          accessibilityLabel="Loading result"
+        />
+      </Screen>
+    );
+  }
 
   if (!results || !settings) {
     return (
@@ -95,6 +130,7 @@ export default function Results() {
 
 function makeStyles({ colors, fonts, spacing, textStyles }: Theme) {
   return StyleSheet.create({
+    fill: { flex: 1 },
     errorText: { ...textStyles.body, color: colors.danger },
     hero: { alignItems: "center", marginTop: spacing.xl },
     wpmLabel: { ...textStyles.caption, color: colors.muted },

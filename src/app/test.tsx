@@ -1,9 +1,11 @@
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
-import { StyleSheet, Text, TextInput, View } from "react-native";
+import { useSQLiteContext } from "expo-sqlite";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { Alert, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { insertTestResult } from "@/db/testResults";
 import { useTheme, type Theme } from "@/hooks/useTheme";
 import { generateTargetText } from "@/lib/generateTargetText";
 import { computeStats } from "@/lib/stats";
@@ -12,6 +14,7 @@ import { withAlpha } from "@/theme/colors";
 
 export default function Test() {
   const router = useRouter();
+  const db = useSQLiteContext();
   const config = parseTestParams(useLocalSearchParams());
   const styles = makeStyles(useTheme());
 
@@ -19,7 +22,9 @@ export default function Test() {
     config ? generateTargetText(config) : "",
   );
   const [typedText, setTypedText] = useState("");
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(() => Date.now());
+  // Mirrors startTimeRef so render can read it (refs can't be read during render).
+  const [startTime, setStartTime] = useState<number | null>(null);
 
   const inputRef = useRef<TextInput>(null);
 
@@ -35,15 +40,13 @@ export default function Test() {
   const remainingMs =
     timeLimitMs === null
       ? null
-      : startTimeRef.current === null
+      : startTime === null
         ? timeLimitMs
-        : timeLimitMs - (now - startTimeRef.current);
+        : timeLimitMs - (now - startTime);
 
   function finishTest() {
     if (hasEndedRef.current || !config) return;
     hasEndedRef.current = true;
-
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
     const elapsedMs =
       startTimeRef.current === null ? 0 : Date.now() - startTimeRef.current;
@@ -53,29 +56,48 @@ export default function Test() {
 
     const stats = computeStats(targetRef.current, typedRef.current, cappedMs);
 
-    router.replace({
-      pathname: "/result",
-      params: { ...toTestParams(config), ...toStatsParams(stats) },
-    });
+    // Nothing typed (e.g. a timed test left alone): don't save an empty result.
+    if (stats.characters === 0) {
+      Alert.alert("Test not saved", "You didn't type anything.");
+      router.dismissTo("/");
+      return;
+    }
+
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+    insertTestResult(db, config, stats)
+      .then(
+        (id) => ({ resultId: String(id) }),
+        (e) => {
+          // Still show the result, passing the stats directly instead of an id.
+          console.warn("Couldn't save result", e);
+          Alert.alert("Couldn't save result");
+          return { ...toTestParams(config), ...toStatsParams(stats) };
+        },
+      )
+      .then((params) => router.replace({ pathname: "/result", params }));
   }
+
+  // An effect event always sees the latest render, so the interval never goes stale.
+  const onTick = useEffectEvent(() => {
+    const current = Date.now();
+    setNow(current);
+
+    if (
+      timeLimitMs !== null &&
+      startTimeRef.current !== null &&
+      current - startTimeRef.current >= timeLimitMs
+    ) {
+      finishTest();
+    }
+  });
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      const current = Date.now();
-      setNow(current);
-
-      if (
-        timeLimitMs !== null &&
-        startTimeRef.current !== null &&
-        current - startTimeRef.current >= timeLimitMs
-      ) {
-        finishTest();
-      }
-    }, 250);
+    const interval = setInterval(onTick, 250);
     return () => clearInterval(interval);
   }, []);
 
@@ -106,6 +128,7 @@ export default function Test() {
 
     if (startTimeRef.current === null && newText.length > 0) {
       startTimeRef.current = Date.now();
+      setStartTime(startTimeRef.current);
     }
 
     typedRef.current = newText;
