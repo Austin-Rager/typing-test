@@ -1,24 +1,38 @@
-import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
-import { Alert, StyleSheet, Text, TextInput, View } from "react-native";
+import {
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { ConfigChips } from "@/components/ConfigChips";
+import { LiveStats } from "@/components/LiveStats";
+import { ProgressBar } from "@/components/ProgressBar";
+import { TypingDisplay } from "@/components/TypingDisplay";
 import { getCustomText, updateBestWpm } from "@/db/customTexts";
 import { insertTestResult } from "@/db/testResults";
+import { useHaptics } from "@/hooks/useHaptics";
 import { useTheme, type Theme } from "@/hooks/useTheme";
 import { generateTargetText } from "@/lib/generateTargetText";
 import { computeStats } from "@/lib/stats";
 import { parseTestParams, toStatsParams, toTestParams } from "@/lib/testParams";
 import { normalizeText } from "@/lib/validateText";
-import { withAlpha } from "@/theme/colors";
+import { MIN_TOUCH } from "@/theme/tokens";
 
 export default function Test() {
   const router = useRouter();
   const db = useSQLiteContext();
   const config = parseTestParams(useLocalSearchParams());
-  const styles = makeStyles(useTheme());
+  const theme = useTheme();
+  const styles = makeStyles(theme);
+  const haptics = useHaptics();
 
   // Custom texts live in the DB, so they start empty and load below.
   const customTextId =
@@ -26,6 +40,7 @@ export default function Test() {
   const [targetText, setTargetText] = useState(() =>
     config && customTextId === undefined ? generateTargetText(config) : "",
   );
+  const [customTitle, setCustomTitle] = useState<string>();
   const [typedText, setTypedText] = useState("");
   const [now, setNow] = useState(() => Date.now());
   // Mirrors startTimeRef so render can read it (refs can't be read during render).
@@ -41,23 +56,26 @@ export default function Test() {
 
   const timeLimitMs = config?.mode === "timed" ? config.time * 1000 : null;
 
-  // The clock starts on the first keystroke, so the full time shows until then.
-  const remainingMs =
-    timeLimitMs === null
-      ? null
-      : startTime === null
-        ? timeLimitMs
-        : timeLimitMs - (now - startTime);
+  // The clock starts on the first keystroke. `now` only ticks every 250 ms, so
+  // it can lag just behind startTime; clamp so nothing goes negative.
+  const elapsedMs =
+    startTime === null
+      ? 0
+      : Math.min(
+          Math.max(now - startTime, 0),
+          timeLimitMs ?? Number.POSITIVE_INFINITY,
+        );
+  const liveStats = computeStats(targetText, typedText, elapsedMs);
 
   function finishTest() {
     if (hasEndedRef.current || !config) return;
     hasEndedRef.current = true;
 
-    const elapsedMs =
+    const actualMs =
       startTimeRef.current === null ? 0 : Date.now() - startTimeRef.current;
     // The interval can fire a little after time is up; don't count that overshoot.
     const cappedMs =
-      timeLimitMs === null ? elapsedMs : Math.min(elapsedMs, timeLimitMs);
+      timeLimitMs === null ? actualMs : Math.min(actualMs, timeLimitMs);
 
     const stats = computeStats(targetRef.current, typedRef.current, cappedMs);
 
@@ -68,7 +86,7 @@ export default function Test() {
       return;
     }
 
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    haptics.success();
 
     // A failed best-WPM update shouldn't stop the result from being saved.
     const saveBest =
@@ -122,6 +140,7 @@ export default function Test() {
         const body = normalizeText(text.body);
         targetRef.current = body;
         setTargetText(body);
+        setCustomTitle(text.title);
       })
       .catch((e) => {
         console.warn("Couldn't load text", e);
@@ -143,20 +162,6 @@ export default function Test() {
     );
   }
 
-  const { mode, quoteLength, textStyle } = config;
-
-  function getCharStyle(i: number) {
-    if (i < typedText.length) {
-      return typedText[i] === targetText[i]
-        ? styles.correctChar
-        : styles.incorrectChar;
-    }
-    if (i === typedText.length) {
-      return styles.currentChar;
-    }
-    return styles.untypedChar;
-  }
-
   function handleChangeText(newText: string) {
     if (hasEndedRef.current) return;
 
@@ -170,7 +175,7 @@ export default function Test() {
 
     const newIndex = newText.length - 1;
     if (newIndex >= 0 && newText[newIndex] !== targetText[newIndex]) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      haptics.error();
     }
 
     // Any mode ends once the whole text is typed (maxLength stops input there).
@@ -179,38 +184,91 @@ export default function Test() {
     }
   }
 
+  function handleClose() {
+    // Nothing to lose before the first keystroke.
+    if (startTimeRef.current === null) {
+      router.back();
+      return;
+    }
+    Alert.alert("Quit test?", "This test won't be saved.", [
+      { text: "Keep typing", style: "cancel" },
+      {
+        text: "Quit",
+        style: "destructive",
+        onPress: () => {
+          hasEndedRef.current = true;
+          router.back();
+        },
+      },
+    ]);
+  }
+
+  const progress =
+    timeLimitMs !== null
+      ? elapsedMs / timeLimitMs
+      : targetText.length > 0
+        ? typedText.length / targetText.length
+        : 0;
+
+  const remainingSeconds =
+    timeLimitMs === null
+      ? undefined
+      : Math.max(0, Math.ceil((timeLimitMs - elapsedMs) / 1000));
+
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.infoText}>
-        {mode === "timed"
-          ? `Time: ${config.time}`
-          : `Word count: ${config.wordCount}`}
-      </Text>
-      <Text style={styles.infoText}>Quote length: {quoteLength}</Text>
-      <Text style={styles.infoText}>Text style: {textStyle}</Text>
-      {remainingMs !== null && (
-        <Text style={styles.countdown}>
-          {Math.max(0, Math.ceil(remainingMs / 1000))}
-        </Text>
+      <View style={styles.header}>
+        <View style={styles.chips}>
+          <ConfigChips config={config} customTitle={customTitle} />
+        </View>
+        <Pressable
+          onPress={handleClose}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="Quit test"
+          style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}
+        >
+          <Text style={styles.closeText}>✕</Text>
+        </Pressable>
+      </View>
+
+      <LiveStats
+        wpm={liveStats.wpm}
+        accuracy={liveStats.accuracy}
+        errors={liveStats.errors}
+        remaining={remainingSeconds}
+      />
+      <ProgressBar progress={progress} />
+
+      {startTime === null && (
+        <Text style={styles.hint}>Start typing to begin</Text>
       )}
-      {targetText === "" ? (
-        <Text style={styles.infoText}>Loading text…</Text>
-      ) : (
-        <Text style={styles.targetText}>
-          {targetText.split("").map((char, i) => (
-            <Text key={i} style={getCharStyle(i)}>
-              {char}
-            </Text>
-          ))}
-        </Text>
-      )}
+
+      <ScrollView
+        style={styles.textScroll}
+        keyboardShouldPersistTaps="always"
+      >
+        {targetText === "" ? (
+          <Text style={styles.hint}>Loading text…</Text>
+        ) : (
+          <TypingDisplay
+            target={targetText}
+            typed={typedText}
+            fontSize={theme.typingFontSize}
+            onPress={() => inputRef.current?.focus()}
+          />
+        )}
+      </ScrollView>
+
+      {/* multiline so Return types the newlines in code snippets. */}
       <TextInput
         value={typedText}
         onChangeText={handleChangeText}
         maxLength={targetText.length}
-        placeholder="Click here to type"
+        multiline
         autoCorrect={false}
         autoCapitalize="none"
+        spellCheck={false}
         ref={inputRef}
         style={styles.hiddenInput}
       />
@@ -218,45 +276,38 @@ export default function Test() {
   );
 }
 
-function makeStyles({ colors, fonts, spacing, textStyles, typingFontSize }: Theme) {
+function makeStyles({ colors, radius, spacing, textStyles }: Theme) {
   return StyleSheet.create({
     container: {
       flex: 1,
       padding: spacing.lg,
+      gap: spacing.md,
       backgroundColor: colors.bg,
     },
     errorText: {
       ...textStyles.body,
       color: colors.danger,
     },
-    infoText: {
+    header: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+    chips: { flex: 1 },
+    closeButton: {
+      width: MIN_TOUCH,
+      height: MIN_TOUCH,
+      borderRadius: radius.pill,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    pressed: { opacity: 0.6 },
+    closeText: { ...textStyles.headline, color: colors.text },
+    hint: {
       ...textStyles.caption,
       color: colors.muted,
+      textAlign: "center",
     },
-    countdown: {
-      ...textStyles.stat,
-      color: colors.accent,
-    },
-    targetText: {
-      marginTop: spacing.lg,
-      fontFamily: fonts.mono,
-      fontSize: typingFontSize,
-      lineHeight: typingFontSize * 1.6,
-    },
-    correctChar: {
-      color: colors.text,
-    },
-    incorrectChar: {
-      color: colors.danger,
-      backgroundColor: withAlpha(colors.danger, 0.15),
-    },
-    currentChar: {
-      color: colors.text,
-      backgroundColor: withAlpha(colors.accent, 0.25),
-    },
-    untypedChar: {
-      color: colors.muted,
-    },
+    textScroll: { flex: 1 },
     hiddenInput: {
       position: "absolute",
       opacity: 0,

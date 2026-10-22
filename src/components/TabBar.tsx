@@ -3,6 +3,7 @@ import { SymbolView, type SymbolViewProps } from "expo-symbols";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useHaptics } from "@/hooks/useHaptics";
 import { useTheme, type Theme } from "@/hooks/useTheme";
 import { MIN_TOUCH } from "@/theme/tokens";
 
@@ -17,6 +18,7 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const theme = useTheme();
   const styles = makeStyles(theme);
   const insets = useSafeAreaInsets();
+  const haptics = useHaptics();
 
   return (
     <View
@@ -40,6 +42,7 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
             canPreventDefault: true,
           });
           if (!selected && !event.defaultPrevented) {
+            haptics.selection();
             navigation.navigate(route.name, route.params);
           }
         };

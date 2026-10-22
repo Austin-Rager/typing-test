@@ -22,6 +22,7 @@ import {
   getCustomTexts,
   insertCustomText,
 } from "@/db/customTexts";
+import { useHaptics } from "@/hooks/useHaptics";
 import { useTheme, type Theme } from "@/hooks/useTheme";
 import { DEFAULT_CONFIG, toTestParams } from "@/lib/testParams";
 import { spacing } from "@/theme/tokens";
@@ -31,6 +32,7 @@ export default function Texts() {
   const router = useRouter();
   const db = useSQLiteContext();
   const styles = makeStyles(useTheme());
+  const haptics = useHaptics();
 
   // null until the first load, so the empty state doesn't flash on open.
   const [texts, setTexts] = useState<CustomText[] | null>(null);
@@ -67,6 +69,7 @@ export default function Texts() {
   };
 
   const handleDelete = (id: number) => {
+    haptics.light();
     deleteCustomText(db, id)
       .then(load)
       .catch((e) => console.warn("Couldn't delete text", e));

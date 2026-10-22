@@ -6,16 +6,21 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { AppButton } from "@/components/AppButton";
 import { Card } from "@/components/Card";
 import { OptionButton } from "@/components/OptionButton";
+import { PersonalBestCard } from "@/components/PersonalBestCard";
 import { Screen } from "@/components/Screen";
 import { SectionLabel } from "@/components/SectionLabel";
 import { getCustomTexts } from "@/db/customTexts";
+import { getBestWpm, getSummary } from "@/db/testResults";
 import { useTheme, type Theme } from "@/hooks/useTheme";
+import { getConfigKey } from "@/lib/configKey";
+import { formatConfig } from "@/lib/format";
 import { toTestParams } from "@/lib/testParams";
 import { MIN_TOUCH } from "@/theme/tokens";
 import type {
   CustomText,
   Mode,
   QuoteLength,
+  TestConfig,
   TextStyleOption,
 } from "@/types/test";
 
@@ -45,6 +50,11 @@ export default function Home() {
   const [textStyle, setTextStyle] = useState<TextStyleOption>("random");
   const [customTexts, setCustomTexts] = useState<CustomText[]>([]);
   const [customTextId, setCustomTextId] = useState<number | null>(null);
+  // null until the first load, so the card doesn't flash "no result".
+  const [personalBest, setPersonalBest] = useState<{
+    best: number | null;
+    total: number;
+  } | null>(null);
 
   // Home stays mounted as a tab, so refresh when texts are added or deleted elsewhere.
   useFocusEffect(
@@ -65,28 +75,56 @@ export default function Home() {
   // Custom texts are typed in full, so they always run in words mode.
   const effectiveMode: Mode = isCustom ? "words" : mode;
 
+  const config: TestConfig = {
+    mode: effectiveMode,
+    time,
+    wordCount,
+    quoteLength,
+    textStyle: effectiveStyle,
+    ...(isCustom && { textId: selectedText.id }),
+  };
+  const configKey = getConfigKey(config);
+
+  // Re-runs on focus (new results) and whenever the options change the config.
+  useFocusEffect(
+    useCallback(() => {
+      // Ignore a slow query that finishes after the config has changed again.
+      let active = true;
+      Promise.all([getBestWpm(db, configKey), getSummary(db)])
+        .then(([best, summary]) => {
+          if (active) setPersonalBest({ best, total: summary.total });
+        })
+        .catch((e) => console.warn("Couldn't load personal best", e));
+      return () => {
+        active = false;
+      };
+    }, [db, configKey]),
+  );
+
   const handleStart = () => {
-    router.push({
-      pathname: "/test",
-      params: toTestParams({
-        mode: effectiveMode,
-        time,
-        wordCount,
-        quoteLength,
-        textStyle: effectiveStyle,
-        ...(isCustom && { textId: selectedText.id }),
-      }),
-    });
+    router.push({ pathname: "/test", params: toTestParams(config) });
   };
 
   return (
-    <Screen scroll edges={["top", "left", "right"]}>
+    <Screen
+      scroll
+      edges={["top", "left", "right"]}
+      footer={<AppButton title="Start test" size="lg" onPress={handleStart} />}
+    >
       <View style={styles.header}>
         <Text style={styles.title} accessibilityRole="header">
           Type Test
         </Text>
         <Text style={styles.subtitle}>Pick a setup, then start typing.</Text>
       </View>
+
+      {personalBest && (
+        <PersonalBestCard
+          best={personalBest.best}
+          configLabel={formatConfig(config, selectedText?.title)}
+          total={personalBest.total}
+        />
+      )}
 
       <Card>
         <Section label="Mode" disabled={isCustom}>
@@ -198,8 +236,6 @@ export default function Home() {
           </Section>
         )}
       </Card>
-
-      <AppButton title="Start test" onPress={handleStart} />
     </Screen>
   );
 }

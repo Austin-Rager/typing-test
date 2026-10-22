@@ -120,12 +120,13 @@ export function getRecentResults(
     .then((rows) => rows.map(rowToResult));
 }
 
-// Best WPM overall, or for one config. Pass excludeId to compare a new
-// result against the best from before it. Null when there are no results.
+// Best WPM overall, or for one config. Pass beforeId to only count results
+// saved before that one (ids only go up), so a result can be compared with
+// the best at the time it was taken. Null when there are no results.
 export function getBestWpm(
   db: SQLiteDatabase,
   configKey?: string,
-  excludeId?: number,
+  beforeId?: number,
 ): Promise<number | null> {
   // Only fixed clause text is joined here; values always go through binding.
   const where: string[] = [];
@@ -134,9 +135,9 @@ export function getBestWpm(
     where.push("config_key = ?");
     params.push(configKey);
   }
-  if (excludeId !== undefined) {
-    where.push("id != ?");
-    params.push(excludeId);
+  if (beforeId !== undefined) {
+    where.push("id < ?");
+    params.push(beforeId);
   }
   const whereSql = where.length ? ` WHERE ${where.join(" AND ")}` : "";
 

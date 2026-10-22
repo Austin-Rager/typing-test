@@ -8,12 +8,14 @@ type Props = {
   children: ReactNode;
   scroll?: boolean;
   edges?: Edge[];
+  footer?: ReactNode; // pinned below the content, outside the scroll area
 };
 
 export function Screen({
   children,
   scroll = false,
   edges = ["top", "bottom", "left", "right"],
+  footer,
 }: Props) {
   const styles = makeStyles(useTheme());
 
@@ -29,6 +31,7 @@ export function Screen({
       ) : (
         <View style={[styles.content, styles.fill]}>{children}</View>
       )}
+      {footer && <View style={styles.footer}>{footer}</View>}
     </SafeAreaView>
   );
 }
@@ -42,5 +45,11 @@ function makeStyles({ colors, spacing }: Theme) {
       gap: spacing.lg,
     },
     fill: { flex: 1 },
+    footer: {
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.md,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.border,
+    },
   });
 }

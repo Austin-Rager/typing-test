@@ -13,6 +13,7 @@ type Props = {
   icon?: ReactNode;
   disabled?: boolean;
   fullWidth?: boolean;
+  size?: "md" | "lg";
 };
 
 export function AppButton({
@@ -22,6 +23,7 @@ export function AppButton({
   icon,
   disabled,
   fullWidth = true,
+  size = "md",
 }: Props) {
   const theme = useTheme();
   const styles = makeStyles(theme);
@@ -45,13 +47,20 @@ export function AppButton({
         styles.base,
         styles[variant],
         fullWidth && styles.fullWidth,
+        size === "lg" && styles.large,
         disabled && styles.disabled,
         pressed && Platform.OS === "ios" && styles.pressed,
       ]}
     >
       <View style={styles.content}>
         {icon}
-        <Text style={[styles.title, { color: textColor }]}>{title}</Text>
+        <Text
+          style={[
+            styles.title,
+            size === "lg" && styles.titleLarge,
+            { color: textColor },
+          ]}
+        >{title}</Text>
       </View>
     </Pressable>
   );
@@ -69,6 +78,7 @@ function makeStyles({ colors, radius, spacing, textStyles }: Theme) {
       overflow: "hidden",
     },
     fullWidth: { alignSelf: "stretch" },
+    large: { minHeight: 56 },
     primary: { backgroundColor: colors.accent },
     secondary: {
       backgroundColor: colors.surface,
@@ -80,5 +90,6 @@ function makeStyles({ colors, radius, spacing, textStyles }: Theme) {
     pressed: { opacity: 0.85 },
     content: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
     title: { ...textStyles.headline },
+    titleLarge: { fontSize: 18 },
   });
 }

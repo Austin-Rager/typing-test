@@ -1,4 +1,3 @@
-import * as Haptics from "expo-haptics";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import { useCallback, useState } from "react";
@@ -13,7 +12,6 @@ import { HistoryItem } from "@/components/HistoryItem";
 import { SectionLabel } from "@/components/SectionLabel";
 import { StatBox } from "@/components/StatBox";
 import { SwipeableRow } from "@/components/SwipeableRow";
-import { useSettings } from "@/context/SettingsContext";
 import { getCustomTexts } from "@/db/customTexts";
 import {
   clearTestResults,
@@ -21,6 +19,7 @@ import {
   getAllResults,
   getSummary,
 } from "@/db/testResults";
+import { useHaptics } from "@/hooks/useHaptics";
 import { useTheme, type Theme } from "@/hooks/useTheme";
 import { spacing } from "@/theme/tokens";
 import type { TestResult } from "@/types/test";
@@ -36,7 +35,7 @@ type HistoryData = {
 export default function History() {
   const router = useRouter();
   const db = useSQLiteContext();
-  const { settings } = useSettings();
+  const haptics = useHaptics();
   const styles = makeStyles(useTheme());
 
   // null until the first load, so the empty state doesn't flash on open.
@@ -59,9 +58,7 @@ export default function History() {
   );
 
   const handleDelete = (id: number) => {
-    if (settings.hapticsEnabled) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
+    haptics.light();
     deleteTestResult(db, id)
       .then(load)
       .catch((e) => console.warn("Couldn't delete result", e));

@@ -5,19 +5,36 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { AppButton } from "@/components/AppButton";
 import { Card } from "@/components/Card";
+import { WpmLineChart } from "@/components/charts/WpmLineChart";
+import { ConfigChips } from "@/components/ConfigChips";
+import { PersonalBestBadge } from "@/components/PersonalBestBadge";
 import { Screen } from "@/components/Screen";
 import { SectionLabel } from "@/components/SectionLabel";
 import { StatBox } from "@/components/StatBox";
 import { getCustomText } from "@/db/customTexts";
-import { getTestResult } from "@/db/testResults";
+import {
+  getBestWpm,
+  getRecentResults,
+  getTestResult,
+} from "@/db/testResults";
 import { useTheme, type Theme } from "@/hooks/useTheme";
-import { formatConfig } from "@/lib/format";
+import { formatDuration } from "@/lib/format";
 import {
   parseStatsParams,
   parseTestParams,
   toTestParams,
 } from "@/lib/testParams";
 import type { TestResult } from "@/types/test";
+
+const RECENT_COUNT = 7;
+
+type SavedData = {
+  result: TestResult;
+  // For custom-text results: the text's title, or null if it was deleted.
+  customTitle?: string | null;
+  previousBest: number | null; // best for this config before this test
+  recentWpm: number[]; // oldest to newest
+};
 
 export default function Results() {
   const router = useRouter();
@@ -31,19 +48,27 @@ export default function Results() {
   const idParam = Number(params.resultId);
   const resultId = Number.isInteger(idParam) && idParam > 0 ? idParam : null;
 
-  const [saved, setSaved] = useState<TestResult | null>(null);
-  // For custom-text results: the text's title, or null if it was deleted.
-  const [customTitle, setCustomTitle] = useState<string | null>();
+  const [saved, setSaved] = useState<SavedData | null>(null);
   const [loading, setLoading] = useState(resultId !== null);
 
   useEffect(() => {
     if (resultId === null) return;
     getTestResult(db, resultId)
       .then((result) => {
-        setSaved(result);
-        if (result?.textId === undefined) return;
-        return getCustomText(db, result.textId).then((text) =>
-          setCustomTitle(text?.title ?? null),
+        if (!result) return;
+        return Promise.all([
+          getBestWpm(db, result.configKey, result.id),
+          getRecentResults(db, RECENT_COUNT),
+          result.textId === undefined
+            ? undefined
+            : getCustomText(db, result.textId).then((t) => t?.title ?? null),
+        ]).then(([previousBest, recent, customTitle]) =>
+          setSaved({
+            result,
+            customTitle,
+            previousBest,
+            recentWpm: recent.map((r) => r.wpm).reverse(),
+          }),
         );
       })
       .catch((e) => console.warn("Couldn't load result", e))
@@ -51,8 +76,8 @@ export default function Results() {
   }, [db, resultId]);
 
   // A saved result holds both its stats and its config.
-  const results = resultId === null ? parseStatsParams(params) : saved;
-  const settings = resultId === null ? parseTestParams(params) : saved;
+  const results = resultId === null ? parseStatsParams(params) : saved?.result;
+  const settings = resultId === null ? parseTestParams(params) : saved?.result;
 
   // Test was replaced by Results, so this pops straight back to Home.
   const handleBackToHome = () => {
@@ -88,7 +113,9 @@ export default function Results() {
     router.replace({ pathname: "/test", params: toTestParams(settings) });
   };
 
-  const configText = formatConfig(settings, customTitle);
+  const isNewBest =
+    saved !== null &&
+    (saved.previousBest === null || results.wpm > saved.previousBest);
 
   return (
     <Screen scroll>
@@ -103,13 +130,17 @@ export default function Results() {
         </Text>
       </View>
 
+      {isNewBest && (
+        <PersonalBestBadge
+          wpm={results.wpm}
+          previousBest={saved.previousBest}
+        />
+      )}
+
       <View style={styles.statGrid}>
         <View style={styles.statRow}>
           <StatBox label="Accuracy" value={`${results.accuracy}%`} />
-          <StatBox
-            label="Time"
-            value={settings.mode === "timed" ? `${settings.time}s` : "—"}
-          />
+          <StatBox label="Time taken" value={formatDuration(results.elapsedMs)} />
         </View>
         <View style={styles.statRow}>
           <StatBox label="Errors" value={`${results.errors}`} tone="danger" />
@@ -117,10 +148,19 @@ export default function Results() {
         </View>
       </View>
 
-      <Card>
-        <SectionLabel>Test config</SectionLabel>
-        <Text style={styles.configValue}>{configText}</Text>
-      </Card>
+      <ConfigChips config={settings} customTitle={saved?.customTitle} />
+
+      {saved !== null && (
+        <Card>
+          <SectionLabel>{`Last ${RECENT_COUNT} tests`}</SectionLabel>
+          <WpmLineChart
+            data={saved.recentWpm}
+            height={80}
+            compact
+            highlightLast
+          />
+        </Card>
+      )}
 
       <View style={styles.buttonColumn}>
         <AppButton title="Try again" onPress={handleTryAgain} />
@@ -148,7 +188,6 @@ function makeStyles({ colors, fonts, spacing, textStyles }: Theme) {
     },
     statGrid: { gap: spacing.md },
     statRow: { flexDirection: "row", gap: spacing.md },
-    configValue: { ...textStyles.body, color: colors.text },
     buttonColumn: { gap: spacing.md },
   });
 }
