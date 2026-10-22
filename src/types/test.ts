@@ -27,6 +27,7 @@ export type TestResult = TestStats &
     id: number;
     configKey: string;
     createdAt: number; // ms since epoch
+    avgMotion: number | null; // gyroscope rad/s; null if not measured
   };
 
 export type CustomTextType = "quote" | "code";

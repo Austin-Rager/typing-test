@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 
-const DATABASE_VERSION = 1;
+const DATABASE_VERSION = 2;
 
 // Runs once per launch from SQLiteProvider's onInit. user_version tracks which
 // migrations have already been applied, so reloading doesn't re-run them.
@@ -11,8 +11,17 @@ export function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
       const currentVersion = row?.user_version ?? 0;
       if (currentVersion >= DATABASE_VERSION) return;
 
-      // Version 0 -> 1: initial schema.
-      return db.execAsync(`
+      // Each step upgrades one version, so an old install runs every step it missed.
+      let steps = Promise.resolve();
+      if (currentVersion < 1) steps = steps.then(() => migrateToV1(db));
+      if (currentVersion < 2) steps = steps.then(() => migrateToV2(db));
+      return steps;
+    });
+}
+
+// Version 0 -> 1: initial schema.
+function migrateToV1(db: SQLiteDatabase): Promise<void> {
+  return db.execAsync(`
         PRAGMA journal_mode = WAL;
         CREATE TABLE test_results (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -40,7 +49,15 @@ export function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
           best_wpm INTEGER,
           created_at INTEGER NOT NULL
         );
-        PRAGMA user_version = ${DATABASE_VERSION};
+        PRAGMA user_version = 1;
       `);
-    });
+}
+
+// Version 1 -> 2: average gyroscope motion during a test (rad/s).
+// NULL for older results and devices without a gyroscope.
+function migrateToV2(db: SQLiteDatabase): Promise<void> {
+  return db.execAsync(`
+    ALTER TABLE test_results ADD COLUMN avg_motion REAL;
+    PRAGMA user_version = 2;
+  `);
 }

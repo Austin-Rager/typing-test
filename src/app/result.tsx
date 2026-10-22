@@ -11,6 +11,7 @@ import { PersonalBestBadge } from "@/components/PersonalBestBadge";
 import { Screen } from "@/components/Screen";
 import { SectionLabel } from "@/components/SectionLabel";
 import { StatBox } from "@/components/StatBox";
+import { SteadinessMeter } from "@/components/SteadinessMeter";
 import { getCustomText } from "@/db/customTexts";
 import {
   getBestWpm,
@@ -147,6 +148,13 @@ export default function Results() {
           <StatBox label="Characters" value={`${results.characters}`} />
         </View>
       </View>
+
+      {/* Null for older results and phones without a gyroscope. */}
+      {saved?.result.avgMotion != null && (
+        <Card>
+          <SteadinessMeter motion={saved.result.avgMotion} />
+        </Card>
+      )}
 
       <ConfigChips config={settings} customTitle={saved?.customTitle} />
 

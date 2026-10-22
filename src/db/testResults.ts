@@ -28,6 +28,7 @@ type TestResultRow = {
   text_id: number | null;
   config_key: string;
   created_at: number;
+  avg_motion: number | null;
 };
 
 // Columns that don't apply to a config are stored as NULL, so fall back to
@@ -51,6 +52,7 @@ function rowToResult(row: TestResultRow): TestResult {
     ...(row.text_id !== null && { textId: row.text_id }),
     configKey: row.config_key,
     createdAt: row.created_at,
+    avgMotion: row.avg_motion,
   };
 }
 
@@ -58,6 +60,7 @@ export function insertTestResult(
   db: SQLiteDatabase,
   config: TestConfig,
   stats: TestStats,
+  avgMotion: number | null = null,
 ): Promise<number> {
   const usesQuoteLength =
     config.textStyle === "quote" || config.textStyle === "code";
@@ -67,8 +70,8 @@ export function insertTestResult(
       `INSERT INTO test_results (
         wpm, raw_wpm, accuracy, errors, characters, elapsed_ms,
         mode, time, word_count, quote_length, text_style, text_id,
-        config_key, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        config_key, created_at, avg_motion
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         stats.wpm,
         stats.rawWpm,
@@ -84,6 +87,7 @@ export function insertTestResult(
         config.textStyle === "custom" ? (config.textId ?? null) : null,
         getConfigKey(config),
         Date.now(),
+        avgMotion,
       ],
     )
     .then((result) => result.lastInsertRowId);
