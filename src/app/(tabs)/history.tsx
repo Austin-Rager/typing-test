@@ -6,8 +6,11 @@ import { Alert, FlatList, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppButton } from "@/components/AppButton";
+import { Card } from "@/components/Card";
+import { WpmLineChart } from "@/components/charts/WpmLineChart";
 import { EmptyState } from "@/components/EmptyState";
 import { HistoryItem } from "@/components/HistoryItem";
+import { SectionLabel } from "@/components/SectionLabel";
 import { StatBox } from "@/components/StatBox";
 import { SwipeableRow } from "@/components/SwipeableRow";
 import { useSettings } from "@/context/SettingsContext";
@@ -20,6 +23,8 @@ import {
 import { useTheme, type Theme } from "@/hooks/useTheme";
 import { spacing } from "@/theme/tokens";
 import type { TestResult } from "@/types/test";
+
+const CHART_POINTS = 30;
 
 type HistoryData = {
   summary: { best: number; average: number; total: number };
@@ -77,6 +82,11 @@ export default function History() {
   };
 
   const hasResults = !!data && data.results.length > 0;
+  // Results are newest first; the chart reads left to right, oldest to newest.
+  const chartData = (data?.results ?? [])
+    .slice(0, CHART_POINTS)
+    .reverse()
+    .map((r) => r.wpm);
 
   const header = (
     <View style={styles.header}>
@@ -89,6 +99,12 @@ export default function History() {
           <StatBox label="Average" value={`${data.summary.average}`} />
           <StatBox label="Tests" value={`${data.summary.total}`} />
         </View>
+      )}
+      {hasResults && (
+        <Card>
+          <SectionLabel>WPM over time</SectionLabel>
+          <WpmLineChart data={chartData} highlightLast />
+        </Card>
       )}
     </View>
   );
